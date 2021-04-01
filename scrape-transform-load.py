@@ -1,6 +1,6 @@
 """"
 Author: Alex ONeill
-Author: Gio About Jaoude
+Author: Gio Abou Jaoude
 Author: Noah Ponticiello
 
 Group Project: Visualizing Near Real-Time Reddit r/wallstreetbets Chatter Volume Alongside Trading Volume
