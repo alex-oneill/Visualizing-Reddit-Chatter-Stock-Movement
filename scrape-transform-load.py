@@ -12,9 +12,6 @@ Spring 2021 - Prof. Barabasi
 
 import psycopg2
 from configparser import ConfigParser
-import requests
-from bs4 import BeautifulSoup as bs
-import time
 import praw
 from praw import Reddit
 from collections import namedtuple
@@ -31,30 +28,52 @@ def make_reddit() -> Reddit:
             username=personalusername
             password=personalpassword
     """
-    reddit = praw.Reddit('reddit')
-    return reddit
+    red_instance = praw.Reddit('reddit')
+    return red_instance
 
 
 # SECTION: SCRAPE
-# TODO: SCRAPE REDDIT
 def scrape_reddit(red_instance: Reddit):
     """Scrapes subreddit r/wallstreetbets for the most recent posts and comments."""
     subreddit = red_instance.subreddit('wallstreetbets')
     Comment = namedtuple('Comment', ['comment_id', 'comment_time', 'comment_text', 'submission_id',
                                      'submission_title', 'submission_text'])
 
+    start_time, com_counter = 0, 0
+    points_store = {'start_time': 0, 'comment_count': 0, 'group_points': 0}
     for comment in subreddit.stream.comments(skip_existing=True):
         sub_id, sub_title, sub_text = comment.submission.id, comment.submission.title, comment.submission.selftext
-        com_id, com_timestamp, com_text = comment.id, comment.created_utc, comment.body
+        com_id, com_timestamp, com_text = comment.id, int(comment.created_utc), comment.body
+
+        # NOTE: INITIATED COUNTERS AT FIRST COMMENT
+        if com_counter == 0:
+            start_time = com_timestamp
+            points_store['start_time'] = start_time
+            print('Clean Start: ', start_time)
+            print('INIT::', points_store)
 
         com_tup = Comment(com_id, com_timestamp, com_text, sub_id, sub_title, sub_text)
 
-        # TODO: SAVE COMMENT TO DB?
-
         # NOTE: INSTEAD OF SAVING EACH ROW, PARSE AND SAVE SCORES
         points = parse_reddit(com_tup)
-        store_points_list(points)
-        # print(red_instance.auth.limits) # NOTE: REMAINING API CALLS/SESSION
+        # print(points)
+        com_counter += 1
+
+        # NOTE: RESET COUNTER IF 60 SEC HAS ELAPSED SINCE FIRST COMMENT IN GROUPING
+        if points.comment_time - start_time > 60:
+            store_points_list(points_store)
+            print('\n', red_instance.auth.limits, '\n')  # NOTE: REMAINING API CALLS/SESSION
+            print('Restart INIT:', points)
+            start_time, com_counter = points.comment_time, 1
+            points_store['start_time'] = start_time
+            points_store['comment_count'] = com_counter
+            points_store['group_points'] = points.points
+            # print(points_store)
+        # NOTE: APPEND COUNTERS IF WITHIN 60 SEC OF FIRST COMMENT PER GROUPING
+        else:
+            points_store['comment_count'] = com_counter
+            points_store['group_points'] += points.points
+            # print(points_store)
 
 
 # TODO: SCRAPE TICKER INFO
@@ -98,8 +117,36 @@ def parse_reddit(comment: tuple) -> tuple:
 
 
 # SECTION: LOAD TO DB
-def store_points_list(point_tup: tuple) -> None:
-    # FIXME: HOW DO MAKE A BULK LOAD LIST???
+def db_config(filename='./database.ini', section='postgres'):
+    """Establishes connection to local postgres db with masked credentials.
+        Format as:
+                [postgres]
+                host=localhost
+                database=databasename
+                user=mypostgresusername
+                password=mypostgrespassword
+    """
+    parser = ConfigParser()
+    parser.read(filename)
+    db_conn = {}
+    for param in parser.items(section):
+        db_conn[param[0]] = param[1]
+    return db_conn
+
+
+def store_points_list(point_store: dict) -> None:
+    """Creates reddit points table and stores comment points each minute to the DB"""
+    mk_table = """CREATE TABLE IF NOT EXISTS reddit_points (
+                group_timestamp integer not null,
+                comment_count  integer not null,
+                group_points float(1) not null);"""
+    cur.execute(mk_table)
+    conn.commit()
+    cur.execute("""INSERT INTO reddit_points (group_timestamp, comment_count, group_points)
+                VALUES (%s, %s, %s)""",
+                (point_store['start_time'], point_store['comment_count'], point_store['group_points']))
+    conn.commit()
+
 
 # TODO: LOAD REDDIT TO POSTGRESQL
 def load_reddit():
@@ -121,22 +168,11 @@ def load_ticker():
     # conn.commit()
 
 
-# SECTION: MAIN()
-def main():
-    """Main run logic when initiated via command line."""
-    # TODO: MAIN LOGIC
-    """"
-        > while market_hours:
-            > scrape reddit
-                -> scrape ticker info
-            > parse and clean html from reddit and ticker requests
-            > extract ticker info and other data from reddit posts
-            > load formatted reddit and ticker info to postgres
-            > wait X minutes... then continue
-    """
-    reddit = make_reddit()
-    scrape_reddit(reddit)
+# SECTION: MAIN
 
+params = db_config()
+conn = psycopg2.connect(**params)
+cur = conn.cursor()
 
-if __name__ == '__main__':
-    main()
+reddit = make_reddit()
+scrape_reddit(reddit)
