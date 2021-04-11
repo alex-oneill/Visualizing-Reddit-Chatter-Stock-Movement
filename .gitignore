@@ -1,3 +1,5 @@
 # reddit config
 praw.ini
 
+# postgres config
+database.ini
