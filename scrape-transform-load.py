@@ -50,7 +50,7 @@ def scrape_reddit(red_instance: Reddit):
             start_time = com_timestamp
             points_store['start_time'] = start_time
             print('Clean Start: ', start_time)
-            print('INIT::', points_store)
+            print('INIT::', points_store, '\n')
 
         com_tup = Comment(com_id, com_timestamp, com_text, sub_id, sub_title, sub_text)
 
@@ -61,6 +61,7 @@ def scrape_reddit(red_instance: Reddit):
 
         # NOTE: RESET COUNTER IF 60 SEC HAS ELAPSED SINCE FIRST COMMENT IN GROUPING
         if points.comment_time - start_time > 60:
+            print('CLOSED STORE:', points_store)
             store_points_list(points_store)
             print('\n', red_instance.auth.limits, '\n')  # NOTE: REMAINING API CALLS/SESSION
             print('Restart INIT:', points)
