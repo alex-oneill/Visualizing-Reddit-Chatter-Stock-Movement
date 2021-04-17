@@ -3,3 +3,6 @@ praw.ini
 
 # postgres config
 database.ini
+
+# iex api config
+iex.ini
