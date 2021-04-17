@@ -13,6 +13,7 @@ Spring 2021 - Prof. Barabasi
 import psycopg2
 from configparser import ConfigParser
 import praw
+import requests
 from praw import Reddit
 from collections import namedtuple
 
@@ -63,31 +64,52 @@ def scrape_reddit(red_instance: Reddit):
         if points.comment_time - start_time > 60:
             print('CLOSED STORE:', points_store)
             store_points_list(points_store)
+            scrape_ticker_info(start_time) # NOTE: GRAB TICKER INFO
             print('\n', red_instance.auth.limits, '\n')  # NOTE: REMAINING API CALLS/SESSION
             print('Restart INIT:', points)
             start_time, com_counter = points.comment_time, 1
             points_store['start_time'] = start_time
             points_store['comment_count'] = com_counter
             points_store['group_points'] = points.points
-            # print(points_store)
+            print(points_store)
         # NOTE: APPEND COUNTERS IF WITHIN 60 SEC OF FIRST COMMENT PER GROUPING
         else:
             points_store['comment_count'] = com_counter
             points_store['group_points'] += points.points
             # print(points_store)
+            # print('\n', red_instance.auth.limits, '\n')  # NOTE: REMAINING API CALLS/SESSION
 
 
-# TODO: SCRAPE TICKER INFO
-def scrape_ticker_info():
-    """The function will scrape the ticker symbol, current price, and trading volume and return a raw text result."""
+def iex_config(filename='./iex.ini') -> str:
+    """Reads and returns IEX API token from config file.
+        Format as:
+            [iex]
+            sbox_token=sandboxtoken
+            token=productioncloudtoken
+    """
+    parser = ConfigParser()
+    parser.read(filename)
+    section = parser['iex']
+    token = section['token']
+    return token
+
+
+def scrape_ticker_info(start: int) -> None:
+    """The function grabs the current price and trading volume via IEX API. Returns these values and section scrape
+    time that is being used as a PK for reddit scraping."""
+    TickerValues = namedtuple('TickerValues', ['start_time', 'end_price', 'end_volume'])
+    token = iex_config()
+    ticker = 'GME'
+    base_url = f'https://cloud.iexapis.com/stable/stock/{ticker}/quote?token={token}'
+    stock_data = requests.get(base_url).json()
+
+    # FIXME: EVALUATE iexRealtimePrice, volume, latestVolume, iexVolme, latestPrice, etc
+    ticker_tup = TickerValues(start, stock_data['iexRealtimePrice'], stock_data['volume'])
+    load_ticker(ticker_tup)
+    print(ticker_tup)
 
 
 # SECTION: PARSING & EXTRACTING
-# TODO: PARSE TICKER INFO
-def parse_ticker():
-    """Takes in raw ticker info from ticker scraping, parses out text, and returns symbol data."""
-
-
 def parse_reddit(comment: tuple) -> tuple:
     """Tags posts and comments based on the ticker that is being discussed."""
     patterns = ['gme', 'gamestop', 'game stop']
@@ -135,7 +157,7 @@ def db_config(filename='./database.ini', section='postgres'):
     return db_conn
 
 
-def store_points_list(point_store: dict) -> None:
+def store_points_list(point_store: dict) -> None:  # NOTE: STORING REDDIT POINT VALUES
     """Creates reddit points table and stores comment points each minute to the DB"""
     mk_table = """CREATE TABLE IF NOT EXISTS reddit_points (
                 group_timestamp integer not null,
@@ -149,7 +171,7 @@ def store_points_list(point_store: dict) -> None:
     conn.commit()
 
 
-# TODO: LOAD REDDIT TO POSTGRESQL
+# TODO: LOAD FULL REDDIT COMMENTS TO POSTGRESQL
 def load_reddit():
     """Loads cleaned and formatted reddit content to the reddit database table."""
     # NOTE: define variables
@@ -159,18 +181,21 @@ def load_reddit():
     # conn.commit()
 
 
-# TODO: LOAD TICKER TO POSTGRESQL
-def load_ticker():
-    """Loads cleaned and formatted ticker content to the ticker database table."""
-    # NOTE: define variables
-    # cur.execute("""INSERT INTO <table> (<col1, col2, col3...>)
-    #             VALUES (%s, %s, %s, %s)""",
-    #             (<var1, var2, var3...>))
-    # conn.commit()
+def load_ticker(ticker_info: tuple) -> None:  # NOTE: STORING IEX TICKER VALUES
+    """Creates ticker values table and stores ticker info each minute to the DB."""
+    mk_table = """CREATE TABLE IF NOT EXISTS ticker_info (
+                group_timestamp integer not null,
+                end_price float(2) not null,
+                end_volume int not null);"""
+    cur.execute(mk_table)
+    conn.commit()
+    cur.execute("""INSERT INTO ticker_info (group_timestamp, end_price, end_volume)
+                VALUES (%s, %s, %s)""",
+                (ticker_info.start_time, ticker_info.end_price, ticker_info.end_volume))
+    conn.commit()
 
 
 # SECTION: MAIN
-
 params = db_config()
 conn = psycopg2.connect(**params)
 cur = conn.cursor()
