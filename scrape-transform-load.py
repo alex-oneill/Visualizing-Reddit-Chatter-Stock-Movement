@@ -16,6 +16,7 @@ import praw
 import requests
 from praw import Reddit
 from collections import namedtuple
+from ChartVal import ChartVal
 
 
 # SECTION: MAKE REDDIT OBJ
@@ -64,7 +65,9 @@ def scrape_reddit(red_instance: Reddit):
         if points.comment_time - start_time > 60:
             print('CLOSED STORE:', points_store)
             store_points_list(points_store)
-            scrape_ticker_info(start_time) # NOTE: GRAB TICKER INFO
+            chart_data.add_points(points_store)  # NOTE: STORE POINT DATA IN CLASS
+            scrape_ticker_info(start_time)  # NOTE: GRAB TICKER INFO
+            print(chart_data)
             print('\n', red_instance.auth.limits, '\n')  # NOTE: REMAINING API CALLS/SESSION
             print('Restart INIT:', points)
             start_time, com_counter = points.comment_time, 1
@@ -103,9 +106,10 @@ def scrape_ticker_info(start: int) -> None:
     base_url = f'https://cloud.iexapis.com/stable/stock/{ticker}/quote?token={token}'
     stock_data = requests.get(base_url).json()
 
-    # FIXME: EVALUATE iexRealtimePrice, volume, latestVolume, iexVolme, latestPrice, etc
-    ticker_tup = TickerValues(start, stock_data['iexRealtimePrice'], stock_data['volume'])
+    # FIXME: EVALUATE iexRealtimePrice, volume, latestVolume, iexVolume, latestPrice, etc
+    ticker_tup = TickerValues(start, stock_data['iexRealtimePrice'], stock_data['iexVolume'])
     load_ticker(ticker_tup)
+    chart_data.add_stock(ticker_tup)
     print(ticker_tup)
 
 
@@ -183,13 +187,13 @@ def load_reddit():
 
 def load_ticker(ticker_info: tuple) -> None:  # NOTE: STORING IEX TICKER VALUES
     """Creates ticker values table and stores ticker info each minute to the DB."""
-    mk_table = """CREATE TABLE IF NOT EXISTS ticker_info (
+    mk_table = """CREATE TABLE IF NOT EXISTS ticker_info_2 (
                 group_timestamp integer not null,
                 end_price float(2) not null,
-                end_volume int not null);"""
+                end_volume int null);"""
     cur.execute(mk_table)
     conn.commit()
-    cur.execute("""INSERT INTO ticker_info (group_timestamp, end_price, end_volume)
+    cur.execute("""INSERT INTO ticker_info_2 (group_timestamp, end_price, end_volume)
                 VALUES (%s, %s, %s)""",
                 (ticker_info.start_time, ticker_info.end_price, ticker_info.end_volume))
     conn.commit()
@@ -201,4 +205,5 @@ conn = psycopg2.connect(**params)
 cur = conn.cursor()
 
 reddit = make_reddit()
+chart_data = ChartVal()
 scrape_reddit(reddit)
