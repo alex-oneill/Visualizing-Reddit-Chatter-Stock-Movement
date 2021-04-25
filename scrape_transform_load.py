@@ -67,7 +67,7 @@ def scrape_reddit(red_instance: Reddit):
             store_points_list(points_store)
             chart_data.add_points(points_store)  # NOTE: STORE POINT DATA IN CLASS
             scrape_ticker_info(start_time)  # NOTE: GRAB TICKER INFO
-            print(chart_data)
+            # print(chart_data)
             print('\n', red_instance.auth.limits, '\n')  # NOTE: REMAINING API CALLS/SESSION
             print('Restart INIT:', points)
             start_time, com_counter = points.comment_time, 1
@@ -106,10 +106,11 @@ def scrape_ticker_info(start: int) -> None:
     base_url = f'https://cloud.iexapis.com/stable/stock/{ticker}/quote?token={token}'
     stock_data = requests.get(base_url).json()
 
-    # FIXME: EVALUATE iexRealtimePrice, volume, latestVolume, iexVolume, latestPrice, etc
-    ticker_tup = TickerValues(start, stock_data['iexRealtimePrice'], stock_data['iexVolume'])
+    ticker_tup = TickerValues(start, stock_data['iexRealtimePrice'], stock_data['iexVolume'])  # NOTE: MKT HOURS
+    # ticker_tup = TickerValues(start, stock_data['latestPrice'], stock_data['latestVolume'])  # NOTE: OFF HOURS
     load_ticker(ticker_tup)
     chart_data.add_stock(ticker_tup)
+    chart_data.write_csv()
     print(ticker_tup)
 
 
@@ -206,4 +207,5 @@ cur = conn.cursor()
 
 reddit = make_reddit()
 chart_data = ChartVal()
+
 scrape_reddit(reddit)
